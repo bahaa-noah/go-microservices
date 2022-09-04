@@ -1,23 +1,48 @@
 package main
 
 import (
-	"fmt"
-	"io/ioutil"
+	"bahaa-noah/go-microservices/handlers"
+	"context"
 	"log"
 	"net/http"
+	"os"
+	"os/signal"
+	"time"
 )
 
 func main() {
 
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		log.Println("Hello World")
-		data, err := ioutil.ReadAll(r.Body)
-		if err != nil {
-			http.Error(w, "Something went wrong", http.StatusBadRequest)
-			return
-		}
-		fmt.Fprintf(w, "Hello %s\n", data)
-	})
+	log := log.New(os.Stdout, "product-api", log.LstdFlags)
+	helloHandler := handlers.NewHello(log)
+	goodbyeHandler := handlers.NewGoodbye(log)
 
-	http.ListenAndServe(":9090", nil)
+	serveMux := http.NewServeMux()
+	serveMux.Handle("/", helloHandler)
+	serveMux.Handle("/goodbye", goodbyeHandler)
+
+	server := &http.Server{
+		Addr:         ":9090",
+		Handler:      serveMux,
+		IdleTimeout:  120 * time.Second,
+		ReadTimeout:  1 * time.Second,
+		WriteTimeout: 1 * time.Second,
+	}
+
+	go func() {
+		err := server.ListenAndServe()
+
+		if err != nil {
+			log.Fatal(err)
+		}
+	}()
+
+	sigChan := make(chan os.Signal)
+	signal.Notify(sigChan, os.Interrupt)
+	signal.Notify(sigChan, os.Kill)
+
+	sig := <-sigChan
+	log.Println("Received terminate, graceful shutdown", sig)
+
+	timeoutContext, _ := context.WithTimeout(context.Background(), 30*time.Second)
+	server.Shutdown(timeoutContext)
 }
